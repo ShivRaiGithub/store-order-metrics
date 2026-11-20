@@ -11,6 +11,14 @@ Live Link: https://store-order-metrics.vercel.app/
    
 All questions return expected and correct answers
 
+| AQ | Question | Expected (from `orders.csv`) | Live answer | Result |
+| --- | --- | --- | --- | --- |
+| AQ-01 | sales last 30 days online store only | Today = 29 Oct, so 30 Sep – 29 Oct, Online Store: bar chart, 7 orders (Parka 3, Northridge 2, Jeans, Rain Shell, Cardigan, Gloves, Beanie 1 each), 1,413.10 net | 30 Sep – 29 Oct, Online Store: bar chart, 7 orders, same products and counts | Pass |
+| AQ-03 | which jackets came back the most last week | 20–26 Oct, by return date: Alpine Down Parka 3 (657.00), Northridge 1 (135.15); 4 units, 792.15 | Same range; returned-orders table, 4 units, 792.15; Parka named as most returned | Pass |
+| AQ-05 | sales and returns on jackets last week | 20–26 Oct: at least one correct chart; jacket returns 4 units, 792.15 | 20–26 Oct: orders-by-product chart and returned-orders table (4 units, 792.15) | Pass |
+| AQ-16 | top return reasons for jakets in september | 1–30 Sep, jackets, by return date: no returns (the only September jacket order, #2214, came back 6 Oct) | 1–30 Sep, filtered to the 3 jackets: "No returns in this period", 0 units | Pass |
+| AQ-19 | refunds been bad lately? | Default range (last week, 20–26 Oct): 4 units, 792.15 refunded | Last week (20–26 Oct), "lately" noted as no fixed meaning; table, 4 units, 792.15 | Pass |
+
 ## Data
 
 `data/orders.csv` is the order export. Each row is one **line item** in an order, with columns for order date, customer, product, quantity, price, discount, line total, sales channel, fulfillment status, and return details (`returned`, `return_date`, `return_reason`, `refund_amount`).
