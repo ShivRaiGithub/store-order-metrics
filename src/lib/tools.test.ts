@@ -81,6 +81,15 @@ describe("filters", () => {
     expect(r.filterLabel).toBe("Alpine Down Parka, Northridge Insulated Jacket, Harbor Rain Shell");
   });
 
+  it("Meta ad-spend questions use the Instagram channel", () => {
+    for (const channel of ["Meta", "meta ads", "IG", "Instagram"]) {
+      const r = runTool("get_sales", { period: "this month", channel }, lines, opts);
+      // October Instagram: order #2706, Alpine Down Parka, 219.00
+      expect(r.data).toMatchObject({ filters: { channel: "Instagram" }, totals: { orders: 1, netSales: 219 } });
+      expect(r.filterLabel).toBe("Instagram");
+    }
+  });
+
   it("category and unknown values", () => {
     const r = runTool("get_sales", { period: "this month", category: "accessories" }, lines, opts);
     expect((r.data as { totals: { unitsSold: number } }).totals.unitsSold).toBe(6); // beanie 1 + 3, gloves 1 + 1

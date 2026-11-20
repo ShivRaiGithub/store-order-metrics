@@ -116,6 +116,7 @@ Every tool takes the same optional filters:
 | Filter | Example | Notes |
 | --- | --- | --- |
 | `channel` | "online store only" → `"Online Store"` | One of the channels in the data: Online Store, Shop app, Point of Sale, Instagram. |
+| `channel` (Meta) | "ad spend on Meta this month" → `"Instagram"` | "Meta", "meta ads" and "IG" mean the Instagram channel, the store's only Meta channel. The data has no ad-cost figures, so Meta questions are answered with **revenue from Instagram orders**, and the answer says so. |
 | `productIds` | "winter jackets" → `["P-1001","P-1002","P-1003"]` | The model maps the merchant's words to catalog products and says which ones it used. |
 | `category` | "accessories" → `"Accessories"` | One of the categories in the data. |
 
@@ -229,3 +230,9 @@ When data lands, finished charts take grey box's place
 The grey box shows as AI's reply bubble
 Each grey box belongs to the response by the AI and appears in place of chart until chart loads.
 Update readme. Commit and push to GitHub
+
+### Stage 4
+Deploy repo to vercel
+It is named as "store-order-metrics" on github
+Upload .env securely to environment variables
+Send back the deployed link

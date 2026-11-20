@@ -41,7 +41,7 @@ const rangeParams = {
   channel: {
     type: "string",
     description:
-      'Only count orders from this sales channel, spelled exactly as in the catalog (e.g. "Online Store"). Leave out for all channels.',
+      'Only count orders from this sales channel, spelled exactly as in the catalog (e.g. "Online Store"). "Meta" means "Instagram". Leave out for all channels.',
   },
   productIds: {
     type: "array",
@@ -62,7 +62,7 @@ export const TOOL_DEFINITIONS = [
     function: {
       name: "get_sales",
       description:
-        "Get sales and best sellers. How much did I sell, how many orders and items, what did I give away in discounts, and which products sold best? Use groupBy \"day\" for sales for each day, or \"product\" for best sellers (sorted by net sales, highest first). Dates are order dates.",
+        "Get sales and best sellers. How much did I sell, how many orders and items, what did I give away in discounts, and which products sold best? Use groupBy \"day\" for sales for each day, or \"product\" for best sellers (sorted by net sales, highest first). Dates are order dates. Also use this for questions about Meta, Instagram or ad spend on Meta: set channel to \"Instagram\" to get the revenue from Instagram orders.",
       parameters: {
         type: "object",
         properties: {
@@ -151,6 +151,17 @@ export function catalogOf(lines: OrderLine[]): Catalog {
   };
 }
 
+/**
+ * Merchant words for a channel that the data names differently. Meta's only
+ * channel in this store's data is Instagram, so "Meta" questions (including
+ * "ad spend on Meta") are answered with Instagram sales.
+ */
+const CHANNEL_ALIASES: Record<string, string> = {
+  meta: "Instagram",
+  "meta ads": "Instagram",
+  ig: "Instagram",
+};
+
 /** Narrow the order lines by the optional filters. Throws on unknown values. */
 function applyFilters(lines: OrderLine[], args: ToolArgs): { lines: OrderLine[]; filters: Record<string, unknown>; label: string | null } {
   const catalog = catalogOf(lines);
@@ -159,7 +170,9 @@ function applyFilters(lines: OrderLine[], args: ToolArgs): { lines: OrderLine[];
   let out = lines;
 
   if (args.channel) {
-    const channel = catalog.channels.find((c) => c.toLowerCase() === args.channel!.trim().toLowerCase());
+    const asked = args.channel.trim().toLowerCase();
+    const wanted = (CHANNEL_ALIASES[asked] ?? asked).toLowerCase();
+    const channel = catalog.channels.find((c) => c.toLowerCase() === wanted);
     if (!channel) throw new Error(`Unknown channel "${args.channel}". Channels: ${catalog.channels.join(", ")}`);
     out = out.filter((l) => l.salesChannel === channel);
     filters.channel = channel;
