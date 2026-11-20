@@ -73,8 +73,17 @@ describe("salesByProduct", () => {
 });
 
 describe("returnsByProduct", () => {
+  it("defaults to filtering on return date", () => {
+    expect(returnsByProduct(lines, "2025-10-21", "2025-10-27")).toEqual(
+      returnsByProduct(lines, "2025-10-21", "2025-10-27", "return"),
+    );
+    // Order #1188 was placed in May but returned in July: it counts in July.
+    expect(returnsByProduct(lines, "2025-07-01", "2025-07-31").map((p) => p.productId)).toEqual(["P-1003"]);
+    expect(returnsByProduct(lines, "2025-05-01", "2025-05-31")).toEqual([]);
+  });
+
   it("by order date gives a return rate", () => {
-    const r = returnsByProduct(lines, ...ALL);
+    const r = returnsByProduct(lines, ...ALL, "order");
     expect(r[0]).toEqual({
       productId: "P-1001",
       productTitle: "Alpine Down Parka",

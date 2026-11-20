@@ -4,9 +4,14 @@ import type { OrderLine } from "./orders";
  * Metric functions over the order export.
  *
  * Every function takes `startDate` and `endDate` as `YYYY-MM-DD` strings.
- * The range is inclusive on both ends. Unless stated otherwise, a line item is
- * in range when its `orderDate` falls inside it.
+ * The range is inclusive on both ends. A line item is in range when its
+ * `orderDate` falls inside it, except for returns, which use `returnDate`.
  *
+ * To turn a phrase like "last week" or "this month" into a range, use
+ * `resolvePeriod` from ./periods, e.g.
+ *   const { startDate, endDate } = resolvePeriod("last week");
+ *
+
  * Money conventions:
  *  - grossSales = quantity * unitPrice (before discounts)
  *  - discounts  = discountAmount
@@ -178,12 +183,15 @@ export interface ProductReturns {
 /**
  * Returns per product.
  *
+ * Rule: a question about returns is filtered on the **return date**. So
+ * "returns last week" means items returned last week, whenever they were ordered.
+ *
  * `basis` picks which date the range applies to:
- *  - "order"  (default): items *ordered* in the range, and how many of them
- *    came back. Gives a true return rate per product.
- *  - "return": items *returned* in the range, whenever they were ordered.
- *    Matches "what came back this week" — returnRate is null here because the
- *    sold and returned populations differ.
+ *  - "return" (default): items *returned* in the range, whenever they were
+ *    ordered. returnRate is null here because the sold and returned
+ *    populations differ.
+ *  - "order": items *ordered* in the range, and how many of them came back.
+ *    Use this only when you need a per-product return rate.
  *
  * Only products with at least one return are included, sorted by unitsReturned desc.
  */
@@ -191,7 +199,7 @@ export function returnsByProduct(
   lines: OrderLine[],
   startDate: string,
   endDate: string,
-  basis: ReturnDateBasis = "order",
+  basis: ReturnDateBasis = "return",
 ): ProductReturns[] {
   validateRange(startDate, endDate);
   const scoped =
