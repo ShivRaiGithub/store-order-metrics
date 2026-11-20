@@ -64,12 +64,51 @@ salesByProduct(lines, startDate, endDate);
 - **Returning customer** is taken from the export's `is_repeat_customer` flag on each order. If a customer buys a product as new and later as returning within the same range, they are counted once, as returning.
 - Money is rounded to 2 decimals. Ratios (`returnRate`, `returningShare`) are fractions from 0 to 1, rounded to 4 decimals.
 
+## Chat assistant
+
+The home page (`/`) is a chat where a merchant asks a question in plain words and gets a streamed answer that **always states the exact dates it covers**, e.g. *"Last week (Mon 20 Oct 2025 – Sun 26 Oct 2025): ..."*. Each answer also shows a chip for every tool used, with its date range.
+
+How it works:
+
+1. The page posts the conversation to `POST /api/chat` ([`src/app/api/chat/route.ts`](src/app/api/chat/route.ts)).
+2. [`src/lib/chat.ts`](src/lib/chat.ts) streams a completion from OpenRouter using the model in `.env`, with three tools available.
+3. When the model calls a tool, [`src/lib/tools.ts`](src/lib/tools.ts) turns "last week" / "this month" into exact dates with `resolvePeriod`, runs the metric functions, and returns totals together with a ready-made `rangeLabel`. The model copies that label, so it never works out dates or weekdays itself.
+4. The answer streams back to the page as newline-delimited JSON events (`text`, `tool`, `error`, `done`).
+
+### Tools
+
+| Tool | Description the model sees (merchant wording) |
+| --- | --- |
+| `get_sales` | **Get sales and best sellers.** How much did I sell, how many orders and items, what did I give away in discounts, and which products sold best? By day or by product. Uses order dates. |
+| `get_returns` | **Returns:** what came back, which products get returned most, why customers sent them back, and how much I refunded. Uses the date the item was returned. |
+| `get_repeat_customers` | **Repeat customers: get the repeat customers share.** How many of my customers had bought from me before, how many were new, and how much the repeat customers spent. In total, by day or by product. Uses order dates. |
+
+### How the answer handles dates
+
+- "last week" and "this month" are passed to the tool as a `period` and resolved by the rules above.
+- Named dates, months or years ("October 2025", "1–15 Oct") are turned into exact start and end dates by the model.
+- Any other vague phrase ("last month", "recently", "this quarter") is **not guessed**. The assistant says which phrases are supported and asks for exact dates.
+- Numbers come only from tool results. The tools return totals, so the model doesn't add up rows itself.
+
+### Environment
+
+Create `.env` in the project root (it is git-ignored):
+
+```bash
+OPEN_ROUTER_API_KEY=sk-or-...        # required
+OPENROUTER_MODEL=openai/gpt-4o-mini   # required; must support tool calling
+STORE_TODAY=2025-10-29               # optional: pin "today" (handy because the data ends in Oct 2025)
+STORE_TIMEZONE=America/New_York      # optional: the store's time zone for "today"
+```
+
+Free models (`...:free`) are often rate-limited by their provider. The server retries a 429 or 5xx error 3 times. If the error persists, the page shows it; switch the model, or try again later.
+
 ## Getting started
 
 ```bash
 npm install
-npm test        # run the metric tests (Vitest)
-npm run dev     # start the Next.js dev server on http://localhost:3000
+npm test        # run the tests (Vitest)
+npm run dev     # start the chat on http://localhost:3000 (needs .env, see above)
 ```
 
 ## Project layout
@@ -79,12 +118,16 @@ data/orders.csv            order history export
 src/lib/orders.ts          CSV parser + loadOrders()
 src/lib/metrics.ts         metric functions
 src/lib/periods.ts         time phrase → exact date range rules
-src/lib/metrics.test.ts    tests checked against the CSV by hand
-src/lib/periods.test.ts    tests for the time phrase rules
-src/app/                   Next.js app (default scaffold)
+src/lib/tools.ts           chat tools: merchant-worded descriptions + runTool()
+src/lib/chat.ts            OpenRouter streaming + tool-calling loop
+src/lib/*.test.ts          tests (metrics checked against the CSV by hand)
+src/app/page.tsx           chat page
+src/app/api/chat/route.ts  streaming chat endpoint
 ```
 
 ## Prompts Given to Claude Code
+
+### Stage 1
 Initiate a nextjs repo
 Look at Store order @"Store Order History, May to October 2025.csv"  and create metric functions for these:
 
@@ -111,3 +154,16 @@ this month = 1 of this month till today
 date should filter for return date when asked for returns
 
 Fill in the readme and push repo to github when done
+
+### Stage 2
+
+Build a chat page that streams response
+Take a merchant question and answering with exact dates
+Use OpenRouter Api key and model from .env - OPEN_ROUTER_API_KEY, OPENROUTER_MODEL
+
+Write these merchant worded description for each tool:
+return tools - Returns tool description
+sale tools - Get sales and best sellers
+repeat customers tool - Repeat customers - Get the repeat customers share
+
+Commit, update readme and push code to github

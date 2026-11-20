@@ -351,3 +351,46 @@ export function returningCustomersByProduct(
     }))
     .sort((a, b) => b.returningCustomers - a.returningCustomers || a.productId.localeCompare(b.productId));
 }
+
+export interface ReturningCustomersSummary {
+  customers: number;
+  returningCustomers: number;
+  newCustomers: number;
+  /** returningCustomers / customers (0..1), null when nobody ordered. */
+  returningShare: number | null;
+  returningNetSales: number;
+  netSales: number;
+}
+
+/**
+ * Distinct customers across the whole range, split into returning vs new.
+ * A customer counts as returning if any of their orders in the range is
+ * flagged is_repeat_customer.
+ */
+export function returningCustomersSummary(
+  lines: OrderLine[],
+  startDate: string,
+  endDate: string,
+): ReturningCustomersSummary {
+  const scoped = filterByOrderDate(lines, startDate, endDate);
+  const all = new Set<string>();
+  const ret = new Set<string>();
+  let retNet = 0;
+  let net = 0;
+  for (const l of scoped) {
+    all.add(l.customerId);
+    net += l.lineTotal;
+    if (l.isRepeatCustomer) {
+      ret.add(l.customerId);
+      retNet += l.lineTotal;
+    }
+  }
+  return {
+    customers: all.size,
+    returningCustomers: ret.size,
+    newCustomers: all.size - ret.size,
+    returningShare: all.size === 0 ? null : ratio(ret.size, all.size),
+    returningNetSales: round2(retNet),
+    netSales: round2(net),
+  };
+}
