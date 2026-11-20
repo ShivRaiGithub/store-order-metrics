@@ -5,10 +5,10 @@ A Next.js (App Router, TypeScript) project with metric functions over a store's 
 ### Preview
 Live Link: https://store-order-metrics.vercel.app/
 
-6 Screenshots in /Screenshots:
-Winter Jackets Return question
-5 Erik Vogt's acceptance questions: Question 1, 3, 5, 16, 19
-
+6 Screenshots in /Screenshots:   
+1. Winter Jackets Return question   
+2. 5 Erik Vogt's acceptance questions: Question 1, 3, 5, 16, 19
+   
 All questions return expected and correct answers
 
 ## Data
