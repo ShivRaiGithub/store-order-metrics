@@ -44,3 +44,7 @@ export const longDate = (d: string) =>
     month: "short",
     year: "numeric",
   });
+
+/** Subtitle: the date range, plus any filters ("Online Store · Outerwear"). */
+export const withFilters = (spec: { rangeLabel: string; filterLabel: string | null }) =>
+  spec.filterLabel ? `${spec.rangeLabel} · ${spec.filterLabel}` : spec.rangeLabel;

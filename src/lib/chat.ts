@@ -1,7 +1,7 @@
 import type { OrderLine } from "./orders";
 import { todayIn, type ResolveOptions } from "./periods";
 import { CHART_TOOLS, type ChartSpec } from "./charts";
-import { formatRange, runTool, TOOL_DEFINITIONS, type ToolArgs } from "./tools";
+import { catalogOf, formatRange, runTool, TOOL_DEFINITIONS, type ToolArgs } from "./tools";
 
 /**
  * Chat loop against OpenRouter's OpenAI-compatible API, with streaming.
@@ -23,7 +23,15 @@ export interface ChatMessage {
 /** Events streamed to the browser, one JSON object per line. */
 export type ChatEvent =
   | { type: "text"; delta: string }
-  | { type: "tool"; name: string; args: ToolArgs; rangeLabel: string | null; rangeSource: string | null; error?: string }
+  | {
+      type: "tool";
+      name: string;
+      args: ToolArgs;
+      rangeLabel: string | null;
+      rangeSource: string | null;
+      filterLabel: string | null;
+      error?: string;
+    }
   /** A chart tool was called: show a placeholder until its `chart` event arrives. */
   | { type: "chart_pending"; id: string; tool: string }
   /** The chart's data. `chart: null` means the call failed: drop the placeholder. */
@@ -57,21 +65,37 @@ export function buildSystemPrompt(lines: OrderLine[], dateOptions: ResolveOption
   const coverage = orderDates.length
     ? `Orders in the data are dated ${orderDates[0]} to ${orderDates.at(-1)}; returns are dated up to ${returnDates.at(-1) ?? "n/a"}.`
     : "There is no order data.";
+  const catalog = catalogOf(lines);
+  const productList = catalog.products.map((p) => `- ${p.productId}: ${p.productTitle} (${p.productCategory})`).join("\n");
 
   return `You are an analytics assistant for an online clothing store. You answer the merchant's questions about their sales, returns and repeat customers.
 
 Today is ${formatRange({ startDate: today, endDate: today })} (${today}). ${coverage}
 
+Products that appear in the order data (this is the whole catalog you know about):
+${productList}
+Categories: ${catalog.categories.join(", ")}.
+Sales channels: ${catalog.channels.join(", ")}.
+
 Rules:
 1. Every number you give must come from a tool result. Quote the tool's "totals"; never add up rows yourself.
-2. Begin every answer with the exact dates used, copied from the tool result's "rangeLabel", e.g. "Last week (Mon 20 Oct 2025 – Sun 26 Oct 2025): ...". Never leave the dates out.
-3. "last week" and "this month" have fixed meanings. Pass them as the tool's "period" and never work out those dates yourself. Last week = Monday to Sunday of the previous week. This month = the 1st of this month through today.
+2. Begin every answer with the exact dates used, copied from the tool result's "rangeLabel", e.g. "Last week (Mon 20 Oct 2025 – Sun 26 Oct 2025): ...". If the tool result has "filters", name them too (e.g. "Online Store only").
+3. Time phrases have fixed meanings and the server works out the dates. Pass them as the tool's "period" exactly as said and never work out those dates yourself:
+   - "last week" = Monday to Sunday of the previous week
+   - "this month" = the 1st of this month through today
+   - "last N days" / "past N days" = N days ending today (today included)
+   - "this season" = start of the current meteorological season through today
+   - "spring", "summer", "autumn"/"fall", "winter" = the most recent one (Spring Mar–May, Summer Jun–Aug, Autumn Sep–Nov, Winter Dec–Feb); if we are in it, its start through today
 4. When the merchant names exact dates, a month or a year (e.g. "October 2025", "1–15 Oct"), convert that to startDate/endDate. A month without a year means the most recent one on or before today.
-5. Any other vague period ("last month", "recently", "this quarter", "past few weeks") has no agreed meaning. Do not guess. Say that "last week" and "this month" are supported, and ask for exact dates.
-6. Returns are counted on the day the item was returned, not the day it was ordered. Say so when you answer about returns.
-7. If a range has no data, say so and mention the dates the data covers.
-8. Keep it short and plain. Money with two decimals. No tables.
-9. Charts are shown to the merchant automatically, right above your text: get_sales by day shows a "Revenue by date" line chart, get_sales by product shows an "Orders by product" bar chart, and get_returns shows a "Returned orders" table. When one is shown, do not list its rows again. Give the dates, the headline totals and at most two short observations (e.g. the best day or the top reason). For "revenue by date" or "each day" questions, use groupBy "day".`;
+5. If the merchant gives no period at all, do not ask: call the tool without period or dates. The server uses this month, and the rangeSource says so. Mention that it is this month and that they can ask for another period.
+6. Any other vague period ("recently", "lately", "last month", "this quarter", "past few weeks", "winter 2024") has no fixed meaning. Do not ask and do not pick dates yourself: pass the phrase as "period" and the server uses last week. Then say that, e.g. "\"Recently\" isn't a fixed period, so this is last week (Mon 20 Oct – Sun 26 Oct 2025)", and that they can ask for another period.
+7. Products: map the merchant's words to catalog products and pass their ids as productIds (e.g. "jackets" or "winter jackets" → the Jacket, Parka and Shell products; "the parka" → the Alpine Down Parka). Pass category when they name a whole category, and channel when they name a sales channel ("online store only" → "Online Store"). Say which products you included. Do not ask which products they meant when the catalog makes it clear.
+8. If the merchant asks about a product that is not in the catalog, say there are no orders for it in the data. Do not offer to look up its sales or returns.
+9. There is no inventory or stock data. Say so for stock questions, and don't offer data you don't have.
+10. Returns are counted on the day the item was returned, not the day it was ordered. Say so when you answer about returns.
+11. If a range has no data, say so and mention the dates the data covers.
+12. Keep it short and plain. Money with two decimals. No tables.
+13. Charts are shown to the merchant automatically, right above your text: get_sales by day shows a "Revenue by date" line chart, get_sales by product shows an "Orders by product" bar chart, and get_returns shows a "Returned orders" table. When one is shown, do not list its rows again. Give the dates, the headline totals and at most two short observations (e.g. the best day or the top reason). For "revenue by date" or "each day" questions, use groupBy "day".`;
 }
 
 /** Parse an OpenAI-style SSE stream into JSON chunks. */
@@ -189,6 +213,7 @@ export async function runChat(
         args,
         rangeLabel: result.range ? formatRange(result.range) : null,
         rangeSource: result.rangeSource,
+        filterLabel: result.filterLabel,
         ...(error ? { error } : {}),
       });
       const chartId = chartIdFor(call);

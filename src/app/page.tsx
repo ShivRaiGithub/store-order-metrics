@@ -10,6 +10,7 @@ interface ToolUse {
   name: string;
   rangeLabel: string | null;
   rangeSource: string | null;
+  filterLabel: string | null;
   error?: string;
 }
 
@@ -34,6 +35,7 @@ const EXAMPLES = [
   "Show my revenue by date for October 2025",
   "Which products had the most orders last week?",
   "What got returned last week, and why?",
+  "Best sellers in the last 30 days, online store only",
   "What share of my customers were repeat customers this month?",
 ];
 
@@ -57,8 +59,8 @@ function applyEvent(m: Assistant, event: ChatEvent): Assistant {
       return { ...m, parts };
     }
     case "tool": {
-      const { name, rangeLabel, rangeSource, error } = event;
-      return { ...m, tools: [...m.tools, { name, rangeLabel, rangeSource, error }] };
+      const { name, rangeLabel, rangeSource, filterLabel, error } = event;
+      return { ...m, tools: [...m.tools, { name, rangeLabel, rangeSource, filterLabel, error }] };
     }
     case "chart_pending":
       return { ...m, parts: [...m.parts, { type: "chart", id: event.id, tool: event.tool }] };
@@ -253,6 +255,7 @@ function AssistantReply({ m }: { m: Assistant }) {
               {TOOL_LABELS[t.name] ?? t.name}
               {t.rangeLabel && ` · ${t.rangeLabel}`}
               {t.rangeSource && t.rangeSource !== "explicit dates" && ` (${t.rangeSource})`}
+              {t.filterLabel && ` · ${t.filterLabel}`}
               {t.error && " · needs dates"}
             </span>
           ))}

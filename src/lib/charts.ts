@@ -12,6 +12,8 @@ export interface LineChartSpec {
   kind: "line";
   title: string;
   rangeLabel: string;
+  /** Filters applied, e.g. "Online Store · Outerwear". */
+  filterLabel: string | null;
   /** Every day in the range, including days with no sales (0). */
   points: { date: string; netSales: number; orders: number }[];
   totalNetSales: number;
@@ -21,6 +23,8 @@ export interface BarChartSpec {
   kind: "bar";
   title: string;
   rangeLabel: string;
+  /** Filters applied, e.g. "Online Store · Outerwear". */
+  filterLabel: string | null;
   /** Sorted by orders, most first. */
   bars: { productTitle: string; orders: number; unitsSold: number; netSales: number }[];
   totalOrders: number;
@@ -30,6 +34,8 @@ export interface TableSpec {
   kind: "table";
   title: string;
   rangeLabel: string;
+  /** Filters applied, e.g. "Online Store · Outerwear". */
+  filterLabel: string | null;
   dateBasis: "return date" | "order date";
   rows: {
     orderId: string;

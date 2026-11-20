@@ -20,7 +20,7 @@ import {
   YAxis,
 } from "recharts";
 import type { BarChartSpec, LineChartSpec } from "@/lib/charts";
-import { ChartBubble, longDate, money, moneyShort, shortDate } from "./ChartBubble";
+import { ChartBubble, withFilters, longDate, money, moneyShort, shortDate } from "./ChartBubble";
 import { ChartPlaceholder } from "./ChartPlaceholder";
 import { useWidth } from "./useWidth";
 
@@ -77,7 +77,7 @@ export function RevenueLineChart({ spec }: { spec: LineChartSpec }) {
       ) : (
         <ChartBubble
           title={spec.title}
-          subtitle={spec.rangeLabel}
+          subtitle={withFilters(spec)}
           summary={`Net revenue ${money(spec.totalNetSales)}`}
         >
           <LineChart
@@ -149,7 +149,7 @@ export function OrdersBarChart({ spec }: { spec: BarChartSpec }) {
       {width === 0 ? (
         <ChartPlaceholder label="Drawing orders by product…" />
       ) : (
-        <ChartBubble title={spec.title} subtitle={spec.rangeLabel} summary={`${spec.totalOrders} orders`}>
+        <ChartBubble title={spec.title} subtitle={withFilters(spec)} summary={`${spec.totalOrders} orders`}>
           {spec.bars.length === 0 ? (
             <p className="py-8 text-center text-sm text-[var(--text-secondary)]">No orders in this period.</p>
           ) : (

@@ -49,6 +49,46 @@ describe("resolvePeriod: this month = the 1st through today", () => {
   });
 });
 
+describe("resolvePeriod: last N days = N days ending today", () => {
+  it("last 30 days includes today", () => {
+    expect(resolvePeriod("last 30 days", { today: "2025-10-29" })).toEqual({
+      startDate: "2025-09-30",
+      endDate: "2025-10-29",
+    });
+  });
+
+  it("past 7 days and last 1 day", () => {
+    expect(resolvePeriod("past 7 days", { today: "2025-10-29" })).toEqual({ startDate: "2025-10-23", endDate: "2025-10-29" });
+    expect(resolvePeriod("last 1 day", { today: "2025-10-29" })).toEqual({ startDate: "2025-10-29", endDate: "2025-10-29" });
+  });
+
+  it("rejects 0 or more than a year", () => {
+    expect(() => resolvePeriod("last 0 days", { today: "2025-10-29" })).toThrow(/between 1 and 366/);
+    expect(() => resolvePeriod("last 400 days", { today: "2025-10-29" })).toThrow(/between 1 and 366/);
+  });
+});
+
+describe("resolvePeriod: meteorological seasons", () => {
+  it("this season = start of the current season through today", () => {
+    expect(resolvePeriod("this season", { today: "2025-10-29" })).toEqual({ startDate: "2025-09-01", endDate: "2025-10-29" });
+    // Winter starts in December of the previous year.
+    expect(resolvePeriod("this season", { today: "2026-01-15" })).toEqual({ startDate: "2025-12-01", endDate: "2026-01-15" });
+    expect(resolvePeriod("this season", { today: "2025-12-03" })).toEqual({ startDate: "2025-12-01", endDate: "2025-12-03" });
+  });
+
+  it("a named season we are in runs to today; fall = autumn", () => {
+    expect(resolvePeriod("fall", { today: "2025-10-29" })).toEqual({ startDate: "2025-09-01", endDate: "2025-10-29" });
+    expect(resolvePeriod("Autumn", { today: "2025-10-29" })).toEqual({ startDate: "2025-09-01", endDate: "2025-10-29" });
+  });
+
+  it("a named season we are not in is the whole of the most recent one", () => {
+    expect(resolvePeriod("summer", { today: "2025-10-29" })).toEqual({ startDate: "2025-06-01", endDate: "2025-08-31" });
+    expect(resolvePeriod("winter", { today: "2025-10-29" })).toEqual({ startDate: "2024-12-01", endDate: "2025-02-28" });
+    expect(resolvePeriod("winter", { today: "2024-06-10" })).toEqual({ startDate: "2023-12-01", endDate: "2024-02-29" }); // leap year
+    expect(resolvePeriod("spring", { today: "2026-01-15" })).toEqual({ startDate: "2025-03-01", endDate: "2025-05-31" });
+  });
+});
+
 describe("resolvePeriod: input handling", () => {
   it("accepts case and separator variants", () => {
     expect(resolvePeriod("Last_Week", { today: "2026-11-18" }).startDate).toBe("2026-11-09");
@@ -57,6 +97,7 @@ describe("resolvePeriod: input handling", () => {
 
   it("refuses phrases without a rule instead of guessing", () => {
     expect(() => resolvePeriod("last month", { today: "2025-10-15" })).toThrow(/Unsupported period/);
+    expect(() => resolvePeriod("winter 2025", { today: "2025-10-15" })).toThrow(/Unsupported period/);
   });
 
   it("rejects an invalid today", () => {

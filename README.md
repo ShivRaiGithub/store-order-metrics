@@ -18,7 +18,7 @@ const lines = loadOrders(); // reads data/orders.csv
 salesByDay(lines, "2025-10-01", "2025-10-31");
 ```
 
-## Time phrases ("last week", "this month")
+## Time phrases ("last week", "last 30 days", "this season")
 
 A merchant usually asks about a period in words, not exact dates. [`src/lib/periods.ts`](src/lib/periods.ts) turns those words into exact dates, so two people asking the same question get the same numbers.
 
@@ -26,6 +26,13 @@ A merchant usually asks about a period in words, not exact dates. [`src/lib/peri
 | --- | --- | --- |
 | `last week` | Monday of the previous week | Sunday of the previous week (all 7 days) |
 | `this month` | The 1st of the current month | Today (inclusive) |
+| `last N days` / `past N days` (N = 1–366) | N−1 days before today | Today. "Last 30 days" on 29 Oct = 30 Sep – 29 Oct |
+| `this season` | 1st day of the current season | Today |
+| `spring` / `summer` / `autumn` / `fall` / `winter` | The most recent one: if we're in it, its 1st day … | … through today; otherwise its last day |
+| *(no period given)* | Same as `this month` | |
+| *(any other phrase: "recently", "last month", "this quarter")* | Same as `last week` | The answer says the phrase has no fixed meaning, so it used last week |
+
+Seasons are **meteorological**: spring Mar–May, summer Jun–Aug, autumn (fall) Sep–Nov, winter Dec–Feb. December belongs to the following January and February. On 29 Oct 2025, "this season" and "autumn" both mean 1 Sep – 29 Oct 2025, "summer" means 1 Jun – 31 Aug 2025, and "winter" means 1 Dec 2024 – 28 Feb 2025.
 
 ```ts
 import { resolvePeriod } from "@/lib/periods";
@@ -43,7 +50,7 @@ salesByProduct(lines, startDate, endDate);
 
 - **Today** is a calendar date. Pass `today` to get reproducible results, or `timeZone` so "today" means the store's local date. With neither, the server's local date is used.
 - Case, spaces, `_` and `-` don't matter: `"Last_Week"` works the same as `"last week"`.
-- **Any other phrase throws an error** (for example `"last month"`) instead of being guessed. To support a new phrase, add its rule and a test in `periods.ts`.
+- **Phrases with no rule fall back to last week.** `resolvePeriod` itself throws `UnsupportedPeriodError` for them (for example `"recently"`, `"last month"`, `"winter 2024"`). The chat tools catch that error and use `FALLBACK_PERIOD` (`"last week"`), and the tool result's `rangeSource` reads e.g. `last week ("recently" has no fixed meaning)`. A malformed rule, such as `"last 0 days"`, or half a date range is still an error. To give a phrase its own meaning, add a rule and a test in `periods.ts`.
 - **Questions about returns filter on the return date.** "Returns last week" means items *returned* last week, whenever they were ordered. `returnsByProduct` does this by default.
 
 | Function | What it returns |
@@ -104,11 +111,24 @@ Charts use [Recharts](https://recharts.org). Colors come from CSS tokens in `glo
 | `get_returns` | **Returns:** what came back, which products get returned most, why customers sent them back, and how much I refunded. Uses the date the item was returned. |
 | `get_repeat_customers` | **Repeat customers: get the repeat customers share.** How many of my customers had bought from me before, how many were new, and how much the repeat customers spent. In total, by day or by product. Uses order dates. |
 
+Every tool takes the same optional filters:
+
+| Filter | Example | Notes |
+| --- | --- | --- |
+| `channel` | "online store only" → `"Online Store"` | One of the channels in the data: Online Store, Shop app, Point of Sale, Instagram. |
+| `productIds` | "winter jackets" → `["P-1001","P-1002","P-1003"]` | The model maps the merchant's words to catalog products and says which ones it used. |
+| `category` | "accessories" → `"Accessories"` | One of the categories in the data. |
+
+An unknown channel, category or product id comes back as an error, so the model corrects itself instead of showing empty numbers. Filters appear in the tool chip and in the chart subtitle (e.g. "Tue 30 Sept 2025 – Wed 29 Oct 2025 · Online Store").
+
+The model's instructions include the **product catalog** built from the order data (ids, names, categories), the categories and the channels. For a product that isn't in the catalog ("fleece vests") it says there are no orders for it, and it doesn't offer figures it can't get. There is **no stock or inventory data**, and it says so.
+
 ### How the answer handles dates
 
-- "last week" and "this month" are passed to the tool as a `period` and resolved by the rules above.
+- Time phrases ("last week", "this month", "last 30 days", "this season", "winter") are passed to the tool as a `period` and resolved by the rules above.
+- **No period given** ("repeat customer share"): the tool uses this month, and the answer says so. The assistant doesn't ask first.
 - Named dates, months or years ("October 2025", "1–15 Oct") are turned into exact start and end dates by the model.
-- Any other vague phrase ("last month", "recently", "this quarter") is **not guessed**. The assistant says which phrases are supported and asks for exact dates.
+- **Phrases with no rule** ("recently", "last month", "this quarter", "winter 2024") use **last week**. The assistant doesn't ask first. It says the phrase isn't a fixed period, so the answer covers last week, and that the merchant can ask for another period.
 - Numbers come only from tool results. The tools return totals, so the model doesn't add up rows itself.
 
 ### Environment

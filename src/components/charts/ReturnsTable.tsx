@@ -1,12 +1,12 @@
 import type { TableSpec } from "@/lib/charts";
-import { ChartBubble, money, shortDate } from "./ChartBubble";
+import { ChartBubble, withFilters, money, shortDate } from "./ChartBubble";
 
 /** Returned orders: one row per returned line item. */
 export function ReturnsTable({ spec }: { spec: TableSpec }) {
   return (
     <ChartBubble
       title={spec.title}
-      subtitle={`${spec.rangeLabel} · by ${spec.dateBasis}`}
+      subtitle={`${withFilters(spec)} · by ${spec.dateBasis}`}
       summary={`${spec.totalUnits} ${spec.totalUnits === 1 ? "unit" : "units"} · ${money(spec.totalRefund)} refunded`}
     >
       {spec.rows.length === 0 ? (
