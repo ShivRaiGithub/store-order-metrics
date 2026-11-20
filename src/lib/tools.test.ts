@@ -44,6 +44,38 @@ describe("runTool", () => {
   });
 });
 
+describe("charts", () => {
+  it("revenue by date is a line chart with every day, including zero days", () => {
+    const r = runTool("get_sales", { startDate: "2025-10-23", endDate: "2025-10-24", groupBy: "day" }, lines, opts);
+    expect(r.chart).toMatchObject({ kind: "line", title: "Revenue by date", totalNetSales: 238.5 });
+    expect(r.chart?.kind === "line" && r.chart.points.map((p) => p.netSales)).toEqual([238.5, 0]);
+  });
+
+  it("orders by product is a bar chart sorted by orders", () => {
+    const r = runTool("get_sales", { period: "this month" }, lines, opts);
+    expect(r.chart?.kind).toBe("bar");
+    const bars = r.chart?.kind === "bar" ? r.chart.bars : [];
+    expect(bars.map((b) => b.orders)).toEqual([...bars.map((b) => b.orders)].sort((a, b) => b - a));
+    expect(bars[0]).toMatchObject({ productTitle: "Alpine Down Parka", orders: 4 });
+  });
+
+  it("returned orders is a table of returned line items by return date", () => {
+    const r = runTool("get_returns", { period: "last week" }, lines, opts);
+    expect(r.chart).toMatchObject({ kind: "table", title: "Returned orders", dateBasis: "return date", totalUnits: 4, totalRefund: 792.15 });
+    expect(r.chart?.kind === "table" && r.chart.rows.map((row) => [row.orderId, row.returnDate])).toEqual([
+      ["#2402", "2025-10-21"],
+      ["#2455", "2025-10-23"],
+      ["#2518", "2025-10-24"],
+      ["#2706", "2025-10-26"],
+    ]);
+  });
+
+  it("repeat customers and failed calls have no chart", () => {
+    expect(runTool("get_repeat_customers", { period: "this month" }, lines, opts).chart).toBeUndefined();
+    expect(runTool("get_sales", { period: "last month" }, lines, opts).chart).toBeUndefined();
+  });
+});
+
 describe("formatRange", () => {
   it("formats a single day", () => {
     expect(formatRange({ startDate: "2025-10-01", endDate: "2025-10-01" })).toBe("Wed 1 Oct 2025");

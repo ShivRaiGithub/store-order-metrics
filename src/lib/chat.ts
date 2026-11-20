@@ -1,5 +1,6 @@
 import type { OrderLine } from "./orders";
 import { todayIn, type ResolveOptions } from "./periods";
+import { CHART_TOOLS, type ChartSpec } from "./charts";
 import { formatRange, runTool, TOOL_DEFINITIONS, type ToolArgs } from "./tools";
 
 /**
@@ -23,6 +24,10 @@ export interface ChatMessage {
 export type ChatEvent =
   | { type: "text"; delta: string }
   | { type: "tool"; name: string; args: ToolArgs; rangeLabel: string | null; rangeSource: string | null; error?: string }
+  /** A chart tool was called: show a placeholder until its `chart` event arrives. */
+  | { type: "chart_pending"; id: string; tool: string }
+  /** The chart's data. `chart: null` means the call failed: drop the placeholder. */
+  | { type: "chart"; id: string; chart: ChartSpec | null }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -65,7 +70,8 @@ Rules:
 5. Any other vague period ("last month", "recently", "this quarter", "past few weeks") has no agreed meaning. Do not guess. Say that "last week" and "this month" are supported, and ask for exact dates.
 6. Returns are counted on the day the item was returned, not the day it was ordered. Say so when you answer about returns.
 7. If a range has no data, say so and mention the dates the data covers.
-8. Keep it short and plain: lead with the answer, then a few bullet points. Money with two decimals. No tables.`;
+8. Keep it short and plain. Money with two decimals. No tables.
+9. Charts are shown to the merchant automatically, right above your text: get_sales by day shows a "Revenue by date" line chart, get_sales by product shows an "Orders by product" bar chart, and get_returns shows a "Returned orders" table. When one is shown, do not list its rows again. Give the dates, the headline totals and at most two short observations (e.g. the best day or the top reason). For "revenue by date" or "each day" questions, use groupBy "day".`;
 }
 
 /** Parse an OpenAI-style SSE stream into JSON chunks. */
@@ -136,6 +142,7 @@ export async function runChat(
 
     let text = "";
     const calls: ToolCall[] = [];
+    const chartIds = new Map<number, string>();
     for await (const chunk of sseChunks(res.body)) {
       if (chunk.error) {
         const e = chunk.error as { message?: string };
@@ -153,10 +160,17 @@ export async function runChat(
         if (tc.id) call.id = tc.id;
         if (tc.function?.name) call.function.name += tc.function.name;
         if (tc.function?.arguments) call.function.arguments += tc.function.arguments;
+        // Show the chart placeholder as soon as we know a chart tool is being called.
+        if (!chartIds.has(tc.index) && CHART_TOOLS.has(call.function.name)) {
+          const id = `${step}-${tc.index}`;
+          chartIds.set(tc.index, id);
+          send({ type: "chart_pending", id, tool: call.function.name });
+        }
       }
     }
 
     const toolCalls = calls.filter(Boolean);
+    const chartIdFor = (call: ToolCall) => chartIds.get(calls.indexOf(call));
     if (toolCalls.length === 0) return; // final answer streamed
 
     messages.push({ role: "assistant", content: text || null, tool_calls: toolCalls });
@@ -177,6 +191,8 @@ export async function runChat(
         rangeSource: result.rangeSource,
         ...(error ? { error } : {}),
       });
+      const chartId = chartIdFor(call);
+      if (chartId) send({ type: "chart", id: chartId, chart: result.chart ?? null });
       messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result.data) });
     }
   }

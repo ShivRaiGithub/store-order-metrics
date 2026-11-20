@@ -394,3 +394,42 @@ export function returningCustomersSummary(
     netSales: round2(net),
   };
 }
+
+export interface ReturnedOrderLine {
+  orderId: string;
+  orderDate: string;
+  returnDate: string;
+  productId: string;
+  productTitle: string;
+  variant: string;
+  quantity: number;
+  reason: string;
+  refundAmount: number;
+}
+
+/**
+ * Every returned line item, one row each, sorted by return date.
+ * Like returnsByProduct, the range applies to the return date by default.
+ */
+export function returnedOrders(
+  lines: OrderLine[],
+  startDate: string,
+  endDate: string,
+  basis: ReturnDateBasis = "return",
+): ReturnedOrderLine[] {
+  validateRange(startDate, endDate);
+  return lines
+    .filter((l) => l.returned && inRange(basis === "return" ? l.returnDate : l.orderDate, startDate, endDate))
+    .map((l) => ({
+      orderId: l.orderId,
+      orderDate: l.orderDate,
+      returnDate: l.returnDate ?? "",
+      productId: l.productId,
+      productTitle: l.productTitle,
+      variant: l.variant,
+      quantity: l.quantity,
+      reason: l.returnReason ?? "Unspecified",
+      refundAmount: round2(l.refundAmount),
+    }))
+    .sort((a, b) => a.returnDate.localeCompare(b.returnDate) || a.orderId.localeCompare(b.orderId));
+}

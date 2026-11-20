@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChatEvent } from "@/lib/chat";
+import type { ChartSpec } from "@/lib/charts";
+import { ChartSlot } from "@/components/charts/ChartSlot";
+import { ReplyText } from "@/components/ReplyText";
 
 interface ToolUse {
   name: string;
@@ -10,13 +13,16 @@ interface ToolUse {
   error?: string;
 }
 
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  tools?: ToolUse[];
-  error?: string;
-  pending?: boolean;
-}
+/** An AI reply is a sequence of text and chart parts, in the order they arrived. */
+type Part =
+  | { type: "text"; text: string }
+  | { type: "chart"; id: string; tool: string; spec?: ChartSpec };
+
+type Message =
+  | { role: "user"; content: string }
+  | { role: "assistant"; parts: Part[]; tools: ToolUse[]; error?: string; pending: boolean };
+
+type Assistant = Extract<Message, { role: "assistant" }>;
 
 const TOOL_LABELS: Record<string, string> = {
   get_sales: "Sales & best sellers",
@@ -25,11 +31,57 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 const EXAMPLES = [
-  "What were my best sellers in October 2025?",
-  "Which products got returned most last week, and why?",
+  "Show my revenue by date for October 2025",
+  "Which products had the most orders last week?",
+  "What got returned last week, and why?",
   "What share of my customers were repeat customers this month?",
-  "How much did I sell each day from 20 to 26 Oct 2025?",
 ];
+
+const textOf = (m: Message) =>
+  m.role === "user"
+    ? m.content
+    : m.parts
+        .filter((p): p is Extract<Part, { type: "text" }> => p.type === "text")
+        .map((p) => p.text)
+        .join("");
+
+/** Apply one streamed event to the AI reply being built. */
+function applyEvent(m: Assistant, event: ChatEvent): Assistant {
+  switch (event.type) {
+    case "text": {
+      const last = m.parts.at(-1);
+      const parts: Part[] =
+        last?.type === "text"
+          ? [...m.parts.slice(0, -1), { ...last, text: last.text + event.delta }]
+          : [...m.parts, { type: "text", text: event.delta }];
+      return { ...m, parts };
+    }
+    case "tool": {
+      const { name, rangeLabel, rangeSource, error } = event;
+      return { ...m, tools: [...m.tools, { name, rangeLabel, rangeSource, error }] };
+    }
+    case "chart_pending":
+      return { ...m, parts: [...m.parts, { type: "chart", id: event.id, tool: event.tool }] };
+    case "chart":
+      return {
+        ...m,
+        parts: event.chart
+          ? m.parts.map((p) => (p.type === "chart" && p.id === event.id ? { ...p, spec: event.chart! } : p))
+          : m.parts.filter((p) => !(p.type === "chart" && p.id === event.id)), // failed call: drop the placeholder
+      };
+    case "error":
+      return { ...m, error: event.message };
+    default:
+      return m;
+  }
+}
+
+/** When the reply ends, drop placeholders whose chart never arrived. */
+const finish = (m: Assistant): Assistant => ({
+  ...m,
+  pending: false,
+  parts: m.parts.filter((p) => p.type !== "chart" || p.spec),
+});
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -42,15 +94,18 @@ export default function ChatPage() {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
-  const updateLast = (fn: (m: Message) => Message) =>
-    setMessages((prev) => [...prev.slice(0, -1), fn(prev[prev.length - 1])]);
+  const updateReply = (fn: (m: Assistant) => Assistant) =>
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      return last?.role === "assistant" ? [...prev.slice(0, -1), fn(last)] : prev;
+    });
 
   async function ask(question: string) {
     const q = question.trim();
     if (!q || busy) return;
 
-    const history = [...messages, { role: "user" as const, content: q }];
-    setMessages([...history, { role: "assistant", content: "", tools: [], pending: true }]);
+    const history: Message[] = [...messages, { role: "user", content: q }];
+    setMessages([...history, { role: "assistant", parts: [], tools: [], pending: true }]);
     setInput("");
     setBusy(true);
 
@@ -63,8 +118,8 @@ export default function ChatPage() {
         signal: controller.signal,
         body: JSON.stringify({
           messages: history
-            .filter((m) => m.content.trim() !== "")
-            .map(({ role, content }) => ({ role, content })),
+            .map((m) => ({ role: m.role, content: textOf(m) }))
+            .filter((m) => m.content.trim() !== ""),
         }),
       });
       if (!res.ok || !res.body) {
@@ -85,22 +140,15 @@ export default function ChatPage() {
           buffer = buffer.slice(nl + 1);
           if (!line.trim()) continue;
           const event = JSON.parse(line) as ChatEvent;
-          if (event.type === "text") {
-            updateLast((m) => ({ ...m, content: m.content + event.delta }));
-          } else if (event.type === "tool") {
-            const { name, rangeLabel, rangeSource, error } = event;
-            updateLast((m) => ({ ...m, tools: [...(m.tools ?? []), { name, rangeLabel, rangeSource, error }] }));
-          } else if (event.type === "error") {
-            updateLast((m) => ({ ...m, error: event.message }));
-          }
+          updateReply((m) => applyEvent(m, event));
         }
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
-        updateLast((m) => ({ ...m, error: (err as Error).message }));
+        updateReply((m) => ({ ...m, error: (err as Error).message }));
       }
     } finally {
-      updateLast((m) => ({ ...m, pending: false }));
+      updateReply(finish);
       setBusy(false);
       abortRef.current = null;
     }
@@ -139,42 +187,12 @@ export default function ChatPage() {
         {messages.map((m, i) =>
           m.role === "user" ? (
             <div key={i} className="flex justify-end">
-              <div className="max-w-[85%] rounded-2xl bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">
+              <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">
                 {m.content}
               </div>
             </div>
           ) : (
-            <div key={i} className="space-y-2">
-              {m.tools && m.tools.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {m.tools.map((t, j) => (
-                    <span
-                      key={j}
-                      title={t.error}
-                      className={`rounded-full border px-2.5 py-0.5 text-xs ${
-                        t.error
-                          ? "border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400"
-                          : "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
-                      }`}
-                    >
-                      {TOOL_LABELS[t.name] ?? t.name}
-                      {t.rangeLabel && ` · ${t.rangeLabel}`}
-                      {t.rangeSource && t.rangeSource !== "explicit dates" && ` (${t.rangeSource})`}
-                      {t.error && " · needs dates"}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="whitespace-pre-wrap leading-relaxed">
-                {m.content}
-                {m.pending && <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-zinc-400 align-middle" />}
-              </div>
-              {m.error && (
-                <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-                  {m.error}
-                </p>
-              )}
-            </div>
+            <AssistantReply key={i} m={m} />
           ),
         )}
         <div ref={endRef} />
@@ -212,6 +230,62 @@ export default function ChatPage() {
           </button>
         )}
       </form>
+    </div>
+  );
+}
+
+function AssistantReply({ m }: { m: Assistant }) {
+  const lastIndex = m.parts.length - 1;
+  return (
+    <div className="space-y-2">
+      {m.tools.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {m.tools.map((t, j) => (
+            <span
+              key={j}
+              title={t.error}
+              className={`rounded-full border px-2.5 py-0.5 text-xs ${
+                t.error
+                  ? "border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400"
+                  : "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+              }`}
+            >
+              {TOOL_LABELS[t.name] ?? t.name}
+              {t.rangeLabel && ` · ${t.rangeLabel}`}
+              {t.rangeSource && t.rangeSource !== "explicit dates" && ` (${t.rangeSource})`}
+              {t.error && " · needs dates"}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {m.pending && m.parts.length === 0 && (
+        <div className="inline-flex gap-1 rounded-2xl rounded-tl-sm bg-zinc-100 px-4 py-3 dark:bg-zinc-900" aria-label="Thinking">
+          {[0, 150, 300].map((d) => (
+            <span key={d} className="h-2 w-2 animate-bounce rounded-full bg-zinc-400" style={{ animationDelay: `${d}ms` }} />
+          ))}
+        </div>
+      )}
+
+      {m.parts.map((p, j) =>
+        p.type === "chart" ? (
+          <ChartSlot key={p.id} tool={p.tool} spec={p.spec} />
+        ) : p.text.trim() === "" ? null : (
+          <div
+            key={j}
+            className="w-fit max-w-full rounded-2xl rounded-tl-sm bg-zinc-100 px-4 py-2 leading-relaxed dark:bg-zinc-900"
+          >
+            <ReplyText text={p.text.trim()} />
+            {m.pending && j === lastIndex && (
+              <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-zinc-400 align-middle" />
+            )}
+          </div>
+        ),
+      )}
+
+      {m.error && (
+        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{m.error}</p>
+      )}
     </div>
   );
 }

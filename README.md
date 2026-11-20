@@ -73,7 +73,28 @@ How it works:
 1. The page posts the conversation to `POST /api/chat` ([`src/app/api/chat/route.ts`](src/app/api/chat/route.ts)).
 2. [`src/lib/chat.ts`](src/lib/chat.ts) streams a completion from OpenRouter using the model in `.env`, with three tools available.
 3. When the model calls a tool, [`src/lib/tools.ts`](src/lib/tools.ts) turns "last week" / "this month" into exact dates with `resolvePeriod`, runs the metric functions, and returns totals together with a ready-made `rangeLabel`. The model copies that label, so it never works out dates or weekdays itself.
-4. The answer streams back to the page as newline-delimited JSON events (`text`, `tool`, `error`, `done`).
+4. The answer streams back to the page as newline-delimited JSON events (`text`, `tool`, `chart_pending`, `chart`, `error`, `done`).
+
+### Charts in the answer
+
+When a tool's result has a chart, the merchant sees the chart instead of a list of numbers, and the text below it keeps to the dates, the headline totals and one or two observations.
+
+| Metric | View | When it's shown |
+| --- | --- | --- |
+| Revenue by date | Line chart (every day in the range, including days with no sales) | `get_sales` with `groupBy: "day"` |
+| Orders by product | Horizontal bar chart, most orders first | `get_sales` with `groupBy: "product"` |
+| Returned orders | Table: one row per returned item, with order, product, reason and refund, plus a total | `get_returns` (filtered by return date) |
+
+Repeat-customer answers stay as text.
+
+**Loading placeholders.** Each chart gets its own grey box with a spinner, inside the AI's reply, in the spot where the chart will appear:
+
+1. As soon as the model starts calling a chart tool, the server sends `chart_pending` with an id, and the page shows a grey box for that id.
+2. When the tool has run, the server sends `chart` with the same id and the data. If the call failed (for example, an unsupported period), it sends `chart: null` and the box is removed.
+3. The grey box stays until the chart has actually rendered. That covers the chart library downloading on first use (`next/dynamic`) and the chart measuring its width. Then the finished chart replaces the box, at about the same size.
+4. If the reply ends or is stopped before a chart's data arrives, its box is removed.
+
+Charts use [Recharts](https://recharts.org). Colors come from CSS tokens in `globals.css`, with separate light and dark values. Each chart has one series, so its title names it and there's no legend. Hovering shows a tooltip.
 
 ### Tools
 
@@ -120,8 +141,10 @@ src/lib/metrics.ts         metric functions
 src/lib/periods.ts         time phrase → exact date range rules
 src/lib/tools.ts           chat tools: merchant-worded descriptions + runTool()
 src/lib/chat.ts            OpenRouter streaming + tool-calling loop
+src/lib/charts.ts          chart spec types sent to the page
 src/lib/*.test.ts          tests (metrics checked against the CSV by hand)
-src/app/page.tsx           chat page
+src/app/page.tsx           chat page (replies = text bubbles + chart slots)
+src/components/charts/     grey placeholder, line/bar charts, returns table
 src/app/api/chat/route.ts  streaming chat endpoint
 ```
 
@@ -167,3 +190,22 @@ sale tools - Get sales and best sellers
 repeat customers tool - Repeat customers - Get the repeat customers share
 
 Commit, update readme and push code to github
+
+
+### Stage 3
+Implement charts to show data in chat page (chat route). 
+Use these charts for each metric:
+revenue by date - line chart
+orders by product - bar chart
+returned orders - table
+
+Show charts to user instead of plain texts
+
+Implement a grey box with a spinner to show to user until charts load.
+Show the charts when the chart is completed and loaded
+Show a grey box in place of a chart until the chart loads
+Each chart gets its own grey box.
+When data lands, finished charts take grey box's place
+The grey box shows as AI's reply bubble
+Each grey box belongs to the response by the AI and appears in place of chart until chart loads.
+Update readme. Commit and push to GitHub

@@ -3,11 +3,13 @@ import {
   returningCustomersByDay,
   returningCustomersByProduct,
   returningCustomersSummary,
+  returnedOrders,
   returnsByProduct,
   salesByDay,
   salesByProduct,
   type ReturnDateBasis,
 } from "./metrics";
+import type { ChartSpec } from "./charts";
 import { resolvePeriod, SUPPORTED_PERIODS, type DateRange, type ResolveOptions } from "./periods";
 
 /**
@@ -114,6 +116,8 @@ export interface ToolResult {
   rangeSource: string | null;
   /** JSON-serialisable payload sent back to the model. */
   data: unknown;
+  /** Chart/table shown to the merchant on the chat page, if this tool has one. */
+  chart?: ChartSpec;
 }
 
 function resolveRange(args: ToolArgs, options: ResolveOptions): { range: DateRange; source: string } {
@@ -162,12 +166,31 @@ export function runTool(name: string, args: ToolArgs, lines: OrderLine[], option
           discounts: sum(days, (d) => d.discounts),
           netSales: sum(days, (d) => d.netSales),
         };
-        const rows =
-          args.groupBy === "day" ? days.filter((d) => d.orders > 0) : salesByProduct(lines, startDate, endDate);
+        const byDay = args.groupBy === "day";
+        const products = byDay ? [] : salesByProduct(lines, startDate, endDate);
+        const rows = byDay ? days.filter((d) => d.orders > 0) : products;
+        const chart: ChartSpec = byDay
+          ? {
+              kind: "line",
+              title: "Revenue by date",
+              rangeLabel: header.rangeLabel,
+              points: days.map((d) => ({ date: d.date, netSales: d.netSales, orders: d.orders })),
+              totalNetSales: totals.netSales,
+            }
+          : {
+              kind: "bar",
+              title: "Orders by product",
+              rangeLabel: header.rangeLabel,
+              bars: [...products]
+                .sort((a, b) => b.orders - a.orders || b.netSales - a.netSales)
+                .map((p) => ({ productTitle: p.productTitle, orders: p.orders, unitsSold: p.unitsSold, netSales: p.netSales })),
+              totalOrders: totals.orders,
+            };
         return {
           range,
           rangeSource: source,
-          data: { ...header, groupBy: args.groupBy === "day" ? "day (days with no orders omitted)" : "product", totals, rows },
+          data: { ...header, groupBy: byDay ? "day (days with no orders omitted)" : "product", totals, rows },
+          chart,
         };
       }
 
@@ -178,14 +201,29 @@ export function runTool(name: string, args: ToolArgs, lines: OrderLine[], option
           unitsReturned: sum(rows, (r) => r.unitsReturned),
           refundAmount: sum(rows, (r) => r.refundAmount),
         };
+        const dateBasis = basis === "return" ? "return date" : "order date";
+        const returned = returnedOrders(lines, startDate, endDate, basis);
         return {
           range,
           rangeSource: source,
-          data: {
-            ...header,
-            basis: basis === "return" ? "return date" : "order date",
-            totals,
-            rows,
+          data: { ...header, basis: dateBasis, totals, rows },
+          chart: {
+            kind: "table",
+            title: "Returned orders",
+            rangeLabel: header.rangeLabel,
+            dateBasis,
+            rows: returned.map((r) => ({
+              orderId: r.orderId,
+              orderDate: r.orderDate,
+              returnDate: r.returnDate,
+              productTitle: r.productTitle,
+              variant: r.variant,
+              quantity: r.quantity,
+              reason: r.reason,
+              refundAmount: r.refundAmount,
+            })),
+            totalUnits: totals.unitsReturned,
+            totalRefund: totals.refundAmount,
           },
         };
       }
