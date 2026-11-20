@@ -2,6 +2,15 @@
 
 A Next.js (App Router, TypeScript) project with metric functions over a store's order history export (May–October 2025).
 
+### Preview
+Live Link: https://store-order-metrics.vercel.app/
+
+6 Screenshots in /Screenshots:
+Winter Jackets Return question
+5 Erik Vogt's acceptance questions: Question 1, 3, 5, 16, 19
+
+All questions return expected and correct answers
+
 ## Data
 
 `data/orders.csv` is the order export. Each row is one **line item** in an order, with columns for order date, customer, product, quantity, price, discount, line total, sales channel, fulfillment status, and return details (`returned`, `return_date`, `return_reason`, `refund_amount`).
